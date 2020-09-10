@@ -175,8 +175,7 @@ history = model.fit(Xr_train,
                    )
 
 # Plot loss
-plot_history(history)
-plt.savefig(f'{path}/history.pdf', bbox_inches='tight')
+plot_history(history, path)
 
 model.save(f'{path}/model.h5')
 from tensorflow import saved_model

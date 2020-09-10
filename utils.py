@@ -7,6 +7,8 @@ def read_input(inputfile):
     nfiles = 0
     for line in list_input:
         fname = line.rstrip()
+        if fname.startswith('#'):
+            continue
         if not os.path.getsize(fname):
             continue
         print("read file", fname)
@@ -58,7 +60,7 @@ def preProcessing(X, EVT=None):
 
     return inputs, inputs_cat0, inputs_cat1, inputs_cat2
 
-def plot_history(history):
+def plot_history(history, path):
     import pandas as pd
     import matplotlib.pyplot as plt
     import matplotlib as mpl
@@ -77,3 +79,4 @@ def plot_history(history):
     plt.ylim([0.00001, 20])
     plt.yscale('log')
     plt.legend()
+    plt.savefig(path+'/history.pdf', bbox_inches='tight')
