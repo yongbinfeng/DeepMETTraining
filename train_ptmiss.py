@@ -57,7 +57,7 @@ def create_model(n_features=8, n_features_cat=3, n_dense_layers=3, activation='t
     # List of weights. Increase to 3 when operating with biases
     # Expect typical weights to not be of order 1 but somewhat smaller, so apply explicit scaling
     x = Dense(3 if with_bias else 1, activation='linear', kernel_initializer=initializers.VarianceScaling(scale=0.02))(x)
-    print('Shape of last dense layer', x.shape)
+    #print('Shape of last dense layer', x.shape)
 
     x = Concatenate()([x, pxpy])
     x = weighted_sum_layer(with_bias, name = "weighted_sum" if with_bias else "output")(x)
