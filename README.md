@@ -29,5 +29,5 @@ Update the `inputfile` to the location where the inputfile is saved. One inputfi
 
 Run the training
 ```
-python train_ptmiss_mine.py
+python train_ptmiss.py
 ```
