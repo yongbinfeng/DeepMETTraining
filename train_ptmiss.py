@@ -97,7 +97,7 @@ inputfile = "/eos/cms/store/user/yofeng/L1METML/input_MET_PupCandi.h5"
 target_array = get_targets(inputfile, targets)
 features_cands_array = get_features(inputfile, features_cands, maxCands)
 
-## remove events with zero met
+## remove events with 'zero' met
 selections = target_array[:,0] > 10.0
 target_array = target_array[selections]
 features_cands_array = features_cands_array[selections]
