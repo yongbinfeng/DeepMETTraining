@@ -28,24 +28,24 @@ from tensorflow import train
 # Local imports
 from cyclical_learning_rate import CyclicLR
 from weighted_sum_layer import weighted_sum_layer
-from utils import preProcessing, plot_history, read_input
+from utils import plot_history, get_features, get_targets, convertXY2PtPhi, MakePlots
 from loss import custom_loss
 
-def create_model(n_features=8, n_features_cat=3, n_dense_layers=3, activation='tanh', with_bias=False):
+def create_model(n_features=4, n_features_cat=2, n_dense_layers=3, activation='tanh', with_bias=False):
     # continuous features
-    # [b'PF_dxy', b'PF_dz', b'PF_eta', b'PF_mass', b'PF_puppiWeight', b'PF_charge', b'PF_fromPV', b'PF_pdgId',  b'PF_px', b'PF_py']
-    inputs_cont = Input(shape=(maxNPF, n_features), name='input')
+    # ['PF_px', 'PF_py', 'PF_eta', 'PF_puppiWeight']
+    inputs_cont = Input(shape=(maxCands, n_features), name='input')
     pxpy = Lambda(lambda x: slice(x, (0, 0, n_features-2), (-1, -1, -1)))(inputs_cont)
 
     embeddings = []
     for i_emb in range(n_features_cat):
-        input_cat = Input(shape=(maxNPF, 1), name='input_cat{}'.format(i_emb))
+        input_cat = Input(shape=(maxCands, 1), name='input_cat{}'.format(i_emb))
         if i_emb == 0:
             inputs = [inputs_cont, input_cat]
         else:
             inputs.append(input_cat)
         embedding = Embedding(input_dim=emb_input_dim[i_emb], output_dim=emb_out_dim, embeddings_initializer=initializers.RandomNormal(mean=0., stddev=0.4/emb_out_dim), name='embedding{}'.format(i_emb))(input_cat)
-        embedding = Reshape((maxNPF, 8))(embedding)
+        embedding = Reshape((maxCands, 8))(embedding)
         embeddings.append(embedding)
 
     x = Concatenate()([inputs[0]] + [emb for emb in embeddings])
@@ -72,43 +72,74 @@ def create_model(n_features=8, n_features_cat=3, n_dense_layers=3, activation='t
 # configuration
 usage = 'usage: %prog [options]'
 parser = optparse.OptionParser(usage)
-parser.add_option('-i', '--input', dest='input',
-                  help='input file', default='tree_100k.h5', type='string')
 parser.add_option('-l', '--load', dest='load',
                   help='load model from timestamp', default='', type='string')
-parser.add_option('--nfiles', dest='nfiles', 
-                  help='number of h5df files', default=100, type='int')
 parser.add_option('--withbias', dest='withbias',
                   help='include bias term in the DNN', default=False, action="store_true")
 (opt, args) = parser.parse_args()
 
 # general setup
-maxNPF = 4500
-n_features_pf = 8
-n_features_pf_cat = 3
-normFac = 50.
-epochs = 100
+maxCands = 100
+epochs = 20
 batch_size = 64
-preprocessed = True
 emb_out_dim = 8
+encoding_charge = {-1: 0, 0: 1, 1: 2}
+encoding_pdgId = {-211: 0, -13: 1, -11: 2, 0: 3, 11: 4, 13: 5, 22: 6, 130: 7, 211: 8}
 
+features_cands = ['L1PuppiCands_eta', 'L1PuppiCands_puppiWeight','L1PuppiCands_pt', 'L1PuppiCands_phi',
+                         'L1PuppiCands_charge','L1PuppiCands_pdgId']
+targets = ['genMet_pt', 'genMet_phi']
 
 ##
-## read input and do preprocessing
+## read input
 ##
-Xorg, Y = read_input(opt.input)
-Y = Y / -normFac
+inputfile = "/eos/cms/store/user/yofeng/L1METML/input_MET_PupCandi.h5"
+target_array = get_targets(inputfile, targets)
+features_cands_array = get_features(inputfile, features_cands, maxCands)
 
-Xi, Xc1, Xc2, Xc3 = preProcessing(Xorg)
-print(Xc1.dtype)
-Xc = [Xc1, Xc2, Xc3]
+## remove events with zero met
+selections = target_array[:,0] > 10.0
+target_array = target_array[selections]
+features_cands_array = features_cands_array[selections]
+
+print(target_array)
+print(features_cands_array)
+print("loaded the data into memory")
+
+##
+## preprocessing
+##
+nevents = target_array.shape[0]
+ntargets = target_array.shape[1]
+ncandfeatures = features_cands_array.shape[2]
+# convert (pt, phi) to x,y
+target_array_xy = np.zeros((nevents, ntargets))
+target_array_xy[:,0] = target_array[:,0] * np.cos(target_array[:,1])
+target_array_xy[:,1] = target_array[:,0] * np.sin(target_array[:,1])
+# preprocessing input features
+features_cands_array_xy = np.zeros((nevents, maxCands, ncandfeatures))
+features_cands_array_xy[:,:,0] = features_cands_array[:,:,0] # eta
+features_cands_array_xy[:,:,1] = features_cands_array[:,:,1] # puppiWeight
+features_cands_array_xy[:,:,2] = features_cands_array[:,:,2] * np.cos(features_cands_array[:,:,3]) # px
+features_cands_array_xy[:,:,3] = features_cands_array[:,:,2] * np.sin(features_cands_array[:,:,3]) # py
+features_cands_array_xy[:,:,4] = np.vectorize(encoding_charge.get)(features_cands_array[:,:,4]) # charge
+features_cands_array_xy[:,:,5] = np.vectorize(encoding_pdgId.get)(features_cands_array[:,:,5]) # pdgId
+print("finished preprocessing")
+
+Xi = features_cands_array_xy[:,:,0:4]
+Xc1 = features_cands_array_xy[:,:,4:5]
+Xc2 = features_cands_array_xy[:,:,5:]
+print("Xi", Xi)
+print("Xc1 ", Xc1)
+print("Xc2 ", Xc2)
+Xc = [Xc1, Xc2]
 emb_input_dim = {
-    i:int(np.max(Xc[i][0:1000])) + 1 for i in range(n_features_pf_cat)
+    i:int(np.max(Xc[i][0:1000])) + 1 for i in range(len(Xc))
 }
 print('Embedding input dimensions', emb_input_dim)
 
 # prepare training/val data
-Yr = Y
+Yr = target_array_xy
 Xr = [Xi] + Xc
 indices = np.array([i for i in range(len(Yr))])
 indices_train, indices_test = train_test_split(indices, test_size=0.2, random_state=7)
@@ -119,16 +150,18 @@ Yr_train = Yr[indices_train]
 Yr_test = Yr[indices_test]
 
 # inputs, outputs = create_output_graph()
-inputs, outputs = create_model(n_features=n_features_pf, n_features_cat=n_features_pf_cat, with_bias=opt.withbias)
+inputs, outputs = create_model(n_features=4, n_features_cat=len(Xc), with_bias=opt.withbias)
 
 lr_scale = 1.
-clr = CyclicLR(base_lr=0.0003*lr_scale, max_lr=0.001*lr_scale, step_size=len(Y)/batch_size, mode='triangular2')
+clr = CyclicLR(base_lr=0.0003*lr_scale, max_lr=0.001*lr_scale, step_size=len(Yr)/batch_size, mode='triangular2')
 
 # create the model
 model = Model(inputs=inputs, outputs=outputs)
 optimizer = optimizers.Adam(lr=1., clipnorm=1.)
 model.compile(loss=custom_loss, optimizer=optimizer, 
                metrics=['mean_absolute_error', 'mean_squared_error'])
+#model.compile(loss='mae', optimizer=optimizer,
+#               metrics=['mean_absolute_error', 'mean_squared_error'])
 model.summary()
 
 if opt.load:
@@ -155,7 +188,7 @@ csv_logger = CSVLogger(f"{path}/loss_history.csv")
 
 # model checkpoint callback
 # this saves our model architecture + parameters into model.h5
-model_checkpoint = ModelCheckpoint(f'{path}/model.h5', monitor='val_loss',
+model_checkpoint = ModelCheckpoint(f'{path}/model_best.h5', monitor='val_loss',
                                    verbose=0, save_best_only=True,
                                    save_weights_only=False, mode='auto',
                                    period=1)
@@ -171,7 +204,7 @@ history = model.fit(Xr_train,
                     epochs=epochs,
                     verbose=1,  # switch to 1 for more verbosity
                     validation_data=(Xr_test, Yr_test),
-                    callbacks=[early_stopping, clr, stop_on_nan, csv_logger],#, reduce_lr], #, lr,   reduce_lr],
+                    callbacks=[early_stopping, clr, stop_on_nan, csv_logger, model_checkpoint],#, reduce_lr], #, lr,   reduce_lr],
                    )
 
 # Plot loss
@@ -180,3 +213,16 @@ plot_history(history, path)
 model.save(f'{path}/model.h5')
 from tensorflow import saved_model
 saved_model.simple_save(K.get_session(), f'{path}/saved_model', inputs={t.name:t for t in model.input}, outputs={t.name:t for t in model.outputs})
+
+print("runing predictions on the validation datasets")
+# validate the performance
+model.load_weights(f'{path}/model_best.h5')
+Yr_predict = model.predict(Xr_test)
+
+# baseline 
+test_events = Xr_test[0].shape[0]
+baseline_xy = np.zeros((test_events, 2))
+baseline_xy[:,0] = np.sum(Xr_test[0][:,:,2]*Xr_test[0][:,:,1], axis=1) * (-1)
+baseline_xy[:,1] = np.sum(Xr_test[0][:,:,3]*Xr_test[0][:,:,1], axis=1) * (-1)
+
+MakePlots(Yr_test, Yr_predict, baseline_xy)

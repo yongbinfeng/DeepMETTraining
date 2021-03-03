@@ -1,4 +1,5 @@
 import numpy as np
+import tables
 
 def read_input(inputfile):
     import h5py
@@ -80,3 +81,132 @@ def plot_history(history, path):
     plt.yscale('log')
     plt.legend()
     plt.savefig(path+'/history.pdf', bbox_inches='tight')
+
+def get_features(file_name, features, number_of_cands):
+    # load file
+    h5file = tables.open_file(file_name, 'r')
+    nevents = getattr(h5file.root,features[0]).shape[0]
+    nfeatures = len(features)
+    print(nevents)
+
+    # allocate arrays
+    feature_array = np.zeros((nevents,number_of_cands,nfeatures))
+
+    # load feature arrays
+    for j in range(number_of_cands):
+        for (i, feat) in enumerate(features):
+            feature_array[:,j,i] = getattr(h5file.root, feat)[:,j]
+    h5file.close()
+    return feature_array
+
+def get_targets(file_name, targets):
+    # load file
+    h5file = tables.open_file(file_name, 'r')
+    nevents = getattr(h5file.root,targets[0]).shape[0]
+    ntargets = len(targets)
+    print(nevents)
+
+    # allocate arrays
+    target_array = np.zeros((nevents,ntargets))
+
+    # load target arrays
+    for (i, targ) in enumerate(targets):
+        target_array[:,i] = getattr(h5file.root,targ)[:]
+
+    h5file.close()
+    return target_array
+
+def convertXY2PtPhi(arrayXY):
+    # convert from array with [:,0] as X and [:,1] as Y to [:,0] as pt and [:,1] as phi
+    nevents = arrayXY.shape[0]
+    arrayPtPhi = np.zeros((nevents, 2))
+    arrayPtPhi[:,0] = np.sqrt((arrayXY[:,0]**2 + arrayXY[:,1]**2))
+    arrayPtPhi[:,1] = np.sign(arrayXY[:,1])*np.arccos(arrayXY[:,0]/arrayPtPhi[:,0])
+    return arrayPtPhi
+
+def MakePlots(truth_XY, predict_XY, baseline_XY):
+    # make the 1d distribution, response, resolution, 
+    # and response-corrected resolution plots
+    # assume the input has [:,0] as X and [:,1] as Y
+    import matplotlib.pyplot as plt
+    import mplhep as hep
+    plt.style.use(hep.style.CMS)
+    truth_PtPhi = convertXY2PtPhi(truth_XY)
+    predict_PtPhi = convertXY2PtPhi(predict_XY)
+    baseline_PtPhi = convertXY2PtPhi(baseline_XY)
+    Make1DHists(truth_XY[:,0], predict_XY[:,0], baseline_XY[:,0], -100, 100, 40, False, 'MET X [GeV]', 'A.U.', 'MET_x.png')
+    Make1DHists(truth_XY[:,1], predict_XY[:,1], baseline_XY[:,1], -100, 100, 40, False, 'MET Y [GeV]', 'A.U.', 'MET_y.png')
+    Make1DHists(truth_PtPhi[:,0], predict_PtPhi[:,0], baseline_PtPhi[:,0], 0, 400, 40, False, 'MET Pt [GeV]', 'A.U.', 'MET_pt.png')
+    # do statistics
+    from scipy.stats import binned_statistic
+    binnings = np.linspace(0, 400, num=21)
+    print(binnings)
+    truth_means,    bin_edges, binnumber = binned_statistic(truth_PtPhi[:,0], truth_PtPhi[:,0],    statistic='mean', bins=binnings, range=(0,400))
+    predict_means,  _,         _ = binned_statistic(truth_PtPhi[:,0], predict_PtPhi[:,0],  statistic='mean', bins=binnings, range=(0,400))
+    baseline_means, _,         _ = binned_statistic(truth_PtPhi[:,0], baseline_PtPhi[:,0], statistic='mean', bins=binnings, range=(0,400))
+    # plot response
+    plt.figure()
+    plt.hlines(truth_means/truth_means, bin_edges[:-1], bin_edges[1:], colors='k', lw=5,
+           label='Truth', linestyles='solid')
+    plt.hlines(predict_means/truth_means, bin_edges[:-1], bin_edges[1:], colors='r', lw=5,
+           label='Predict', linestyles='solid')
+    plt.hlines(baseline_means/truth_means, bin_edges[:-1], bin_edges[1:], colors='g', lw=5,
+           label='Baseline', linestyles='solid')
+    plt.xlim(0,400.0)
+    plt.ylim(0,1.1)
+    plt.xlabel('Truth MET [GeV]')
+    plt.legend(loc='lower right')
+    plt.ylabel('<MET Estimation>/<MET Truth>')
+    plt.savefig("MET_response.png")
+    plt.close()
+    # response correction factors
+    sfs_truth    = np.take(truth_means/truth_means,    np.digitize(truth_PtPhi[:,0], binnings)-1, mode='clip')
+    sfs_predict  = np.take(predict_means/truth_means,  np.digitize(truth_PtPhi[:,0], binnings)-1, mode='clip')
+    sfs_baseline = np.take(baseline_means/truth_means, np.digitize(truth_PtPhi[:,0], binnings)-1, mode='clip')
+    # resolution defined as (q84-q16)/2.0
+    def resolqt(y):
+        return(np.percentile(y,84)-np.percentile(y,16))/2.0
+    bin_resolX_predict, bin_edges, binnumber = binned_statistic(truth_PtPhi[:,0], truth_XY[:,0] - predict_XY[:,0] * sfs_predict, statistic=resolqt, bins=binnings, range=(0,400))
+    bin_resolY_predict, _, _                 = binned_statistic(truth_PtPhi[:,0], truth_XY[:,1] - predict_XY[:,1] * sfs_predict, statistic=resolqt, bins=binnings, range=(0,400))
+    bin_resolX_baseline, _, _                = binned_statistic(truth_PtPhi[:,0], truth_XY[:,0] - baseline_XY[:,0] * sfs_predict, statistic=resolqt, bins=binnings, range=(0,400))
+    bin_resolY_baseline, _, _                = binned_statistic(truth_PtPhi[:,0], truth_XY[:,1] - baseline_XY[:,1] * sfs_predict, statistic=resolqt, bins=binnings, range=(0,400))
+    plt.figure()
+    plt.hlines(bin_resolX_predict, bin_edges[:-1], bin_edges[1:], colors='r', lw=5,
+           label='Predict', linestyles='solid')
+    plt.hlines(bin_resolX_baseline, bin_edges[:-1], bin_edges[1:], colors='g', lw=5,
+           label='Baseline', linestyles='solid')
+    plt.legend(loc='lower right')
+    plt.xlim(0,400.0)
+    plt.ylim(0,200.0)
+    plt.xlabel('Truth MET [GeV]')
+    plt.ylabel('RespCorr $\sigma$(METX) [GeV]')
+    plt.savefig("resolution_metx.png")
+    plt.close()
+    plt.figure()
+    plt.hlines(bin_resolY_predict, bin_edges[:-1], bin_edges[1:], colors='r', lw=5,
+           label='Predict', linestyles='solid')
+    plt.hlines(bin_resolY_baseline, bin_edges[:-1], bin_edges[1:], colors='g', lw=5,
+           label='Baseline', linestyles='solid')
+    plt.legend(loc='lower right')
+    plt.xlim(0,400.0)
+    plt.ylim(0,200.0)
+    plt.xlabel('Truth MET [GeV]')
+    plt.ylabel('RespCorr $\sigma$(METY) [GeV]')
+    plt.savefig("resolution_mety.png")
+    plt.close()
+
+
+def Make1DHists(truth, predict, baseline, xmin=0, xmax=400, nbins=100, density=False, xname="pt [GeV]", yname = "A.U.", outputname="1ddistribution.png"):
+    import matplotlib.pyplot as plt
+    import mplhep as hep
+    plt.style.use(hep.style.CMS)
+    plt.figure(figsize=(10,8))
+    plt.hist(truth,    bins=nbins, range=(xmin, xmax), density=density, histtype='step', facecolor='k', label='Truth')
+    plt.hist(predict,  bins=nbins, range=(xmin, xmax), density=density, histtype='step', facecolor='r', label='Predict')
+    plt.hist(baseline, bins=nbins, range=(xmin, xmax), density=density, histtype='step', facecolor='g', label='Baseline')
+    plt.yscale('log')
+    plt.legend(loc='upper right')
+    plt.xlabel(xname)
+    plt.ylabel(yname)
+    plt.savefig(outputname)
+    plt.close()
