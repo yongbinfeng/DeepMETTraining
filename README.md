@@ -1,5 +1,5 @@
 ## Some code used in DeepMET trainings
-(Code Taken from Jan Steggemann and Markus Seidel)
+(Code Taken from Jan Steggemann and Markus Seidel, modifed for the L1 MET studies)
 
 First install the necessary packages with [MiniConda](https://docs.conda.io/en/latest/miniconda.html)
 ```
@@ -14,13 +14,20 @@ and activate the environment
 ```
 conda activate METTraining
 ```
+Intall a few more modules:
+```
+pip install mplhep
+pip install tables
+```
 
-Prepare the `h5` training files
+Clone the code to the local repo, and check out the l1met branch
 ```
-python convertNanoToHDF5.py -i /eos/cms/store/user/yofeng/WRecoilNanoAOD_Skimmed_v10_tempMET_TTJets/myNanoProdMc2016_NANO_2_Skim.root -o /eos/cms/store/user/yofeng/DeepMETTrainingFile/myNanoProdMc2016_NANO_ttbar_2_Skim.h5
+git clone git@github.com:yongbinfeng/DeepMETTraining.git
+git checkout l1met
 ```
+Update the `inputfile` to the location where the inputfile is saved.
 
 Run the training
 ```
-python train_ptmiss_mine.py -i input.txt
+python train_ptmiss_mine.py
 ```
