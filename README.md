@@ -25,7 +25,7 @@ Clone the code to the local repo, and check out the l1met branch
 git clone git@github.com:yongbinfeng/DeepMETTraining.git
 git checkout l1met
 ```
-Update the `inputfile` to the location where the inputfile is saved.
+Update the `inputfile` to the location where the inputfile is saved. One inputfile can be found [here](https://cernbox.cern.ch/index.php/s/1d6aOVIO1ltxnCl)
 
 Run the training
 ```
