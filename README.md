@@ -17,7 +17,7 @@ Intall a few more modules:
 ```
 pip install mplhep
 pip install tables
-pip install uproot
+pip install uproot3
 ```
 
 Clone the code to the local repo, and check out the l1met branch
