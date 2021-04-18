@@ -23,6 +23,7 @@ pip install uproot3
 Clone the code to the local repo, and check out the l1met branch
 ```
 git clone git@github.com:yongbinfeng/DeepMETTraining.git
+cd DeepMETTraining
 git checkout l1met
 ```
 Update the `inputfile` to the location where the inputfile is saved. One inputfile can be downloaded from [here](https://cernbox.cern.ch/index.php/s/1d6aOVIO1ltxnCl)
