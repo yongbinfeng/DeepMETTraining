@@ -1,3 +1,11 @@
-#/eos/cms/store/user/yofeng/DeepMETTrainingFile/myNanoProdMc2016_NANO_DY_2_Skim.h5
-#/eos/cms/store/user/yofeng/DeepMETTrainingFile/myNanoProdMc2016_NANO_ttbar_1_Skim.h5
-/eos/cms/store/user/yofeng/DeepMETTrainingFile/myNanoProdMc2016_NANO_ttbar_2_Skim.h5
+/eos/cms/store/user/yofeng/DeepMETTraining/HDF5/dy_40.h5
+/eos/cms/store/user/yofeng/DeepMETTraining/HDF5/dy_41.h5
+/eos/cms/store/user/yofeng/DeepMETTraining/HDF5/dy_42.h5
+/eos/cms/store/user/yofeng/DeepMETTraining/HDF5/dy_43.h5
+/eos/cms/store/user/yofeng/DeepMETTraining/HDF5/dy_44.h5
+/eos/cms/store/user/yofeng/DeepMETTraining/HDF5/dy_45.h5
+/eos/cms/store/user/yofeng/DeepMETTraining/HDF5/ttbar_30.h5
+/eos/cms/store/user/yofeng/DeepMETTraining/HDF5/ttbar_31.h5
+/eos/cms/store/user/yofeng/DeepMETTraining/HDF5/ttbar_32.h5
+/eos/cms/store/user/yofeng/DeepMETTraining/HDF5/ttbar_33.h5
+/eos/cms/store/user/yofeng/DeepMETTraining/HDF5/ttbar_34.h5

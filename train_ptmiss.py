@@ -28,7 +28,7 @@ from tensorflow import train
 # Local imports
 from cyclical_learning_rate import CyclicLR
 from weighted_sum_layer import weighted_sum_layer
-from utils import preProcessing, plot_history, read_input
+from utils import preProcessingNew, plot_history, read_input_New
 from loss import custom_loss
 
 def create_model(n_features=8, n_features_cat=3, n_dense_layers=3, activation='tanh', with_bias=False):
@@ -80,12 +80,26 @@ parser.add_option('--nfiles', dest='nfiles',
                   help='number of h5df files', default=100, type='int')
 parser.add_option('--withbias', dest='withbias',
                   help='include bias term in the DNN', default=False, action="store_true")
+parser.add_option("--useMAELoss", dest="useMAELoss",
+                  help="use MAE loss instead of custom loss for improving MET response", default=False, action="store_true")
+parser.add_option("--PVrobust", dest="PVrobust",
+                  help="use PV robust features", default=False, action="store_true")
+parser.add_option("--NoPUPPI", dest="NoPUPPI",
+                  help="do not use PUPPI weights", default=False, action="store_true")
+
 (opt, args) = parser.parse_args()
 
 # general setup
 maxNPF = 4500
 n_features_pf = 8
 n_features_pf_cat = 3
+if opt.PVrobust:
+    # drop PF_dxy, PF_fromPV
+    n_features_pf = 7
+    n_features_pf_cat = 2
+if opt.NoPUPPI:
+    # take puppi weight out
+    n_features_pf = n_features_pf - 1
 normFac = 50.
 epochs = 100
 batch_size = 64
@@ -96,12 +110,20 @@ emb_out_dim = 8
 ##
 ## read input and do preprocessing
 ##
-Xorg, Y = read_input(opt.input)
-Y = Y / -normFac
+Xorg, Y = read_input_New(opt.input)
+#Y = Y / -normFac
+# for the ones from convertNanoToHDF5New.py
+# already applied norm, and the direction is already the MET direction
+# so no norm or negative sign
+Y = Y
 
-Xi, Xc1, Xc2, Xc3 = preProcessing(Xorg)
+if not opt.PVrobust:
+    Xi, Xc1, Xc2, Xc3 = preProcessingNew(Xorg, PVrobust=False, NoPUPPI=opt.NoPUPPI)
+    Xc = [Xc1, Xc2, Xc3]
+else:
+    Xi, Xc1, Xc2 = preProcessingNew(Xorg, PVrobust=True, NoPUPPI=opt.NoPUPPI)
+    Xc = [Xc1, Xc2]
 print(Xc1.dtype)
-Xc = [Xc1, Xc2, Xc3]
 emb_input_dim = {
     i:int(np.max(Xc[i][0:1000])) + 1 for i in range(n_features_pf_cat)
 }
@@ -127,8 +149,12 @@ clr = CyclicLR(base_lr=0.0003*lr_scale, max_lr=0.001*lr_scale, step_size=len(Y)/
 # create the model
 model = Model(inputs=inputs, outputs=outputs)
 optimizer = optimizers.Adam(lr=1., clipnorm=1.)
-model.compile(loss=custom_loss, optimizer=optimizer, 
-               metrics=['mean_absolute_error', 'mean_squared_error'])
+if not opt.useMAELoss:
+    model.compile(loss=custom_loss, optimizer=optimizer, 
+                metrics=['mean_absolute_error', 'mean_squared_error'])
+else:
+    model.compile(loss='mean_absolute_error', optimizer=optimizer, 
+                metrics=['mean_absolute_error', 'mean_squared_error', custom_loss])
 model.summary()
 
 if opt.load:
