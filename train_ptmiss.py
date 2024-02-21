@@ -86,6 +86,8 @@ parser.add_option("--PVrobust", dest="PVrobust",
                   help="use PV robust features", default=False, action="store_true")
 parser.add_option("--NoPUPPI", dest="NoPUPPI",
                   help="do not use PUPPI weights", default=False, action="store_true")
+parser.add_option("--noTraining", dest="noTraining",
+                  help="do not train, only check model workflow", default=False, action="store_true")
 
 (opt, args) = parser.parse_args()
 
@@ -106,45 +108,44 @@ batch_size = 64
 preprocessed = True
 emb_out_dim = 8
 
+emb_input_dim = {0: 3, 1: 11, 2: 4}
 
-##
-## read input and do preprocessing
-##
-Xorg, Y = read_input_New(opt.input)
-#Y = Y / -normFac
-# for the ones from convertNanoToHDF5New.py
-# already applied norm, and the direction is already the MET direction
-# so no norm or negative sign
-Y = Y
+def PrepareInputs():
+    ##
+    ## read input and do preprocessing
+    ##
+    Xorg, Y = read_input_New(opt.input)
+    #Y = Y / -normFac
+    # for the ones from convertNanoToHDF5New.py
+    # already applied norm, and the direction is already the MET direction
+    # so no norm or negative sign
+    Y = Y
 
-if not opt.PVrobust:
-    Xi, Xc1, Xc2, Xc3 = preProcessingNew(Xorg, PVrobust=False, NoPUPPI=opt.NoPUPPI)
-    Xc = [Xc1, Xc2, Xc3]
-else:
-    Xi, Xc1, Xc2 = preProcessingNew(Xorg, PVrobust=True, NoPUPPI=opt.NoPUPPI)
-    Xc = [Xc1, Xc2]
-print(Xc1.dtype)
-emb_input_dim = {
-    i:int(np.max(Xc[i][0:1000])) + 1 for i in range(n_features_pf_cat)
-}
-print('Embedding input dimensions', emb_input_dim)
+    if not opt.PVrobust:
+        Xi, Xc1, Xc2, Xc3 = preProcessingNew(Xorg, PVrobust=False, NoPUPPI=opt.NoPUPPI)
+        Xc = [Xc1, Xc2, Xc3]
+    else:
+        Xi, Xc1, Xc2 = preProcessingNew(Xorg, PVrobust=True, NoPUPPI=opt.NoPUPPI)
+        Xc = [Xc1, Xc2]
+    print(Xc1.dtype)
+    emb_input_dim = {
+        i:int(np.max(Xc[i][0:1000])) + 1 for i in range(n_features_pf_cat)
+    }
+    print('Embedding input dimensions', emb_input_dim)
 
-# prepare training/val data
-Yr = Y
-Xr = [Xi] + Xc
-indices = np.array([i for i in range(len(Yr))])
-indices_train, indices_test = train_test_split(indices, test_size=0.2, random_state=7)
+    # prepare training/val data
+    Yr = Y
+    Xr = [Xi] + Xc
+    indices = np.array([i for i in range(len(Yr))])
+    indices_train, indices_test = train_test_split(indices, test_size=0.2, random_state=7)
 
-Xr_train = [x[indices_train] for x in Xr]
-Xr_test = [x[indices_test] for x in Xr]
-Yr_train = Yr[indices_train]
-Yr_test = Yr[indices_test]
+    Xr_train = [x[indices_train] for x in Xr]
+    Xr_test = [x[indices_test] for x in Xr]
+    Yr_train = Yr[indices_train]
+    Yr_test = Yr[indices_test]
 
 # inputs, outputs = create_output_graph()
 inputs, outputs = create_model(n_features=n_features_pf, n_features_cat=n_features_pf_cat, with_bias=opt.withbias)
-
-lr_scale = 1.
-clr = CyclicLR(base_lr=0.0003*lr_scale, max_lr=0.001*lr_scale, step_size=len(Y)/batch_size, mode='triangular2')
 
 # create the model
 model = Model(inputs=inputs, outputs=outputs)
@@ -190,9 +191,14 @@ reduce_lr = ReduceLROnPlateau(
 
 stop_on_nan = keras.callbacks.TerminateOnNaN()
 
+if not opt.noTraining:
+    PrepareInputs()
+    
+    lr_scale = 1.
+    clr = CyclicLR(base_lr=0.0003*lr_scale, max_lr=0.001*lr_scale, step_size=len(Y)/batch_size, mode='triangular2')
 
-# Run training
-history = model.fit(Xr_train, 
+    # Run training
+    history = model.fit(Xr_train, 
                     Yr_train,
                     epochs=epochs,
                     verbose=1,  # switch to 1 for more verbosity
@@ -200,9 +206,14 @@ history = model.fit(Xr_train,
                     callbacks=[early_stopping, clr, stop_on_nan, csv_logger],#, reduce_lr], #, lr,   reduce_lr],
                    )
 
-# Plot loss
-plot_history(history, path)
+    # Plot loss
+    plot_history(history, path)
 
-model.save(f'{path}/model.h5')
-from tensorflow import saved_model
-saved_model.simple_save(K.get_session(), f'{path}/saved_model', inputs={t.name:t for t in model.input}, outputs={t.name:t for t in model.outputs})
+    model.save(f'{path}/model.h5')
+    from tensorflow import saved_model
+    saved_model.simple_save(K.get_session(), f'{path}/saved_model', inputs={t.name:t for t in model.input}, outputs={t.name:t for t in model.outputs})
+
+# write model to graphdef so that cmssw can take it as inputs    
+from tensorflow.python.framework import graph_util
+frozen_graph = graph_util.convert_variables_to_constants(K.get_session(), K.get_session().graph_def, ['output/BiasAdd'])
+train.write_graph(graph_or_graph_def=frozen_graph, logdir=f'{path}', name='saved_model.pb', as_text=False)
